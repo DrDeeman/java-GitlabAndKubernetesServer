@@ -1,0 +1,155 @@
+Примечания по администрированию:
+ 1) После установки в систему Gitlab + Gitlab Runner нужно их связать. Устанавливать лучше в контейнеры Docker в общей сети:
+
+    a) docker network create --subnet=10.50.0.0/24 <name_network> - создали сеть
+
+    b) docker run --detach \ 
+    --restart always \
+    --hostname gitlab \
+    --name gitlab \
+    --netwotk <name_network> \
+    --publish 443:443 --publish 8888:80 --publish 22:22 --publish 5005:5005 \
+    --memory 4g \
+    --gitlab/gitlab-ce:latest    - создаем контейнер docker с gitlab. доступ в браузере по localhost:80
+
+
+    c) После поднятия контейнера лезем в него - docker exec -it gitlab /bin/bash
+      внутри смотрим пароль в /etc/gitlab/initial_root_password
+
+    d) Логинимся в браузере с логином root и полученным паролем и создаем раннер по пути Admin -> CI/CD -> Runners -> Create instance runners
+       Проставляем также Run untagged jobs и создаем
+       Окно не закрываем после создания, т.к. отображаемый токен потом нигде больше не найти, если регистрацию с раннером не прошел.
+
+    e) docker run --detach \
+       --name gitlab-runner \
+       --restart always \
+       --network <name_network> \
+       -v /srv/gitlab-runner/config:/etc/gitlab-runner \
+       -v /var/run/docker.sock:/var/run/docker.sock \
+       gitlab/gitlab-runner:latest       - создаем контейнер docker с gitlab-runner
+
+
+    f) связываем раннер с гитлабом:
+       docker exec -it gitlab-runner gitlab-runner register \
+       --non-interactive \
+       --url "http://gitlab" \
+       --registration-token "<полученный ранее токен>" \
+       --executor "docker" \
+       --docker-image "alpine:latest" \
+       --description "my-runner-ubuntu-2404" \
+       --tag-list "docker,ubuntu" \
+       --run-untagged="true" \
+       --locked="false" \
+       --docker-network-mode <name_network> \
+       --access-level="not_protected"
+
+      если не выходит, то стоит пропинговать из контейнера раннера контейнер самого гитлаба - getent hosts gitlab
+
+     После удачной попытки, сопровождаемой 
+       Runner registered successfully. Feel free to start it, but if it's running already the config should be automatically reloaded!
+     в гитлабе смотрим в список раннеров - подключенный должен быть в статусе online
+
+ 2) После установки minikube и kubectl запускаем minikube: 
+      minikube start --driver=docker --memory=2500 --cpus=2 --network=my-net --listen-address=0.0.0.0 --ports=8443:8443  --insecure-registry="gitlab:5005" - порт указываем явно, т.к.  может быть конфликт с gitlab когда у minikube и gitlab по умолчанию работает проброс 22 порта основной системы 
+      однако docker network inspect <name_network> может не отобразить minikube в общей сети, тогда
+      docker network connect <name_network> minikube
+      после этого инспекция должна показать minikube в сети а пинг из другого контейнера контейнер миникуба должен работать
+      
+      иногда после перезапуска системы, контейнеры стартуют хаотично и могут занять ip адреса другие, нежели до перезагрузки. При этом minikube будет ругаться 
+      при запуске что его адрес занят. Тогда вырубаем все контейнеры и поднимаем первым minikube.
+      Если что-то сломалось, экстренно может подчистить так:
+      a)docker rm -f minikube
+      b)docker volume prune -f
+      c)rm -rf ~/.minikube - Удалите папку с ключами
+
+
+ 3) Для проверки успешной интеграции gitlab-runner с minikube в контейнерах должно выполниться успешно 3 проверки:
+    
+    a) docker exec -it gitlab-runner curl -k https://minikube:8443/livez - тут у меня был сразу ок
+
+    b) docker exec -it gitlab-runner kubectl get nodes - тут не было ок, поэтому пришлось устанавливать kubectl в контейнер раннера
+       получаем путь до kubectl в системе - which kubectl
+       docker cp <path_for_kubectl_on_system> gitlab-runner:/usr/local/bin/kubectl - копируем kubectl в контейнер раннера
+       docker exec -it gitlab-runner kubectl version --client - проверяем что тут версию возвращает
+       kubectl config view --flatten --minify > config-for-runner - копируем конфигу kubectl с системы в другой файл для раннера
+       меняем в нем редактором в секции server: адрес https://127.0.0.1:XXXX на https://minikube:8443
+       docker exec -it gitlab-runner mkdir -p /root/.kube - создаем папку под конфигу
+       docker cp ./config-for-runner gitlab-runner:/root/.kube/config - копируем туда конфигу
+       
+       повторный запуск docker exec -it gitlab-runner kubectl get nodes должен уже быть успешным
+
+    с) docker exec -it gitlab-runner kubectl auth can-i create deployments - проверка узлов может быть доступна, 
+         а создание под нет. Если yes - то порядок
+
+ 4) Для gitlab нужно включить COntainer Registry (если не включен)
+    a) заходим в контейнер и открываем файл по пути /etc/gitlab/gitlab.rb
+    b) ищем строчку, меняем и расскоментируем - registry_external_url 'http://gitlab:5005' и gitlab_rails['registry_enabled'] = true
+    с) опционально - отключаем метрики графаны, прометеуса и прочие 
+        
+        для локальной работы:
+         prometheus['enable'] = false
+         alertmanager['enable'] = false
+         node_exporter['enable'] = false
+         redis_exporter['enable'] = false
+         postgres_exporter['enable'] = false
+         gitlab_exporter['enable'] = false
+         grafana['enable'] = false
+    d) в контейенере делаем реконфигурацию - gitlab-ctl reconfigure
+    e) проверяем что Container Registry отвечает по порту -  curl http://localhost:5005/v2/ (если поднят через docker-compose смотри файл)
+       примерный ответ - {"errors":[{"code":"UNAUTHORIZED","message":"authentication required","detail":null}]}
+
+ 5) для docker на хосте нужно в файл /etc/docker/daemon.json добавить следующие строки (если файла нет создай)
+    {
+      "insecure-registries": ["gitlab:80", "gitlab:5005"]
+    }
+    и надо сделать рестарт докера
+       
+
+ 6) Для авторизации раннера в minikube для выполнения команд типа kubectl..., ему нужен токен авторизации в minikube.
+    a) kubectl create serviceaccount gitlab-admin - создаем сервисный аккаунт
+    b) kubectl create clusterrolebinding gitlab-admin-binding --clusterrole=cluster-admin --serviceaccount=default:gitlab-admin - даем ему права администратора
+    c) kubectl create token gitlab-admin --duration=8760h - генерируем долгоживущий токен
+    d) Скопируйте этот длинный набор символов и вставьте в настройки GitLab (Settings > CI/CD > Variables) под именем KUBE_TOKEN\
+    e) После сохранения токена в его настойках надо снять галочку с flags -> protect variables
+    f) В конвейере, после прогона фазы использования токена и созданя секрета, можно попробовать проверить факт создания секрета - kubectl get secret gitlab-registry-key
+
+
+ 7) Когда пайплайн переносит работу в kubernetes начинается фаза выкачивания образа и раскатка. Для выкачивания образа нужно так же сделать токен авторизации в Container Registry
+    a) Идем в gitlab нажимаем на иконку учетки(кружочек в правом верхнем углу) -> Edit profile
+    b) После в левой панеле выбираем Access -> Personal access token 
+    c) Создаем токен  првилегией read registry (ставим галочку) и копируем в токен
+    e) аналогично токену авторизации в minikube создаем переменную с названием REGISTRY_TOKEN
+
+
+
+*********
+Различие между токеном и секретом в Kubernetes простое: токен — это ваш «паспорт» (данные), а секрет — это «сейф», в котором Kubernetes хранит этот паспорт, чтобы безопасно использовать его при скачивании образов.
+1. Что такое токен (Deploy Token / Access Token)
+Это строка символов, которую вы создали в интерфейсе GitLab.
+
+    Зачем нужен: Это ваш логин и пароль для доступа к приватному реестру (Registry).
+    Где живет: В настройках GitLab.
+
+2. Что такое секрет (Kubernetes Secret)
+Это объект внутри вашего кластера Kubernetes.
+
+    Зачем нужен: Когда вы указываете в деплойменте образ gitlab:5005/..., Kubernetes (точнее, его агент — kubelet) пытается его скачать. Но он не знает вашего логина и пароля от GitLab. Секрет — это способ передать эти данные кубернетесу в понятном ему формате.
+    Что происходит в процессе создания (kubectl create secret):
+        Kubernetes берет ваш логин, токен и адрес сервера (gitlab:5005).
+        Упаковывает их в JSON-файл (формат .dockerconfigjson).
+        Кодирует этот файл в Base64.
+        Сохраняет этот «сейф» в своей базе данных (etcd).
+
+3. Как они работают вместе
+Процесс выглядит так:
+
+    Вы создаете токен в GitLab.
+    Вы создаете секрет в Kubernetes, «положив» в него этот токен.
+    В YAML вашего приложения вы пишете: imagePullSecrets: - name: имя-секрета.
+    Kubernetes, когда видит, что нужно скачать образ, заглядывает в этот секрет, достает оттуда токен и предъявляет его GitLab'у: «Привет, я от админа, вот мой пропуск».
+********************
+
+
+
+    
+    

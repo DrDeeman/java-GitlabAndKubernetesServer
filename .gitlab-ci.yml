@@ -1,0 +1,107 @@
+stages:
+  - check_version
+  - test
+  - build
+  - deploy
+
+variables:
+  CI_REGISTRY: gitlab:5005
+  # Имя образа в локальном реестре GitLab
+  APP_IMAGE: $CI_REGISTRY/root/my-project/app:latest
+  # Настройка для Docker-in-Docker, чтобы он сохранял кэш на диске раннера
+  DOCKER_DRIVER: overlay2
+  CI_REGISTRY_USER_CUSTOM: root
+
+
+# 1. Проверяем, нужно ли собирать
+check_version:
+  stage: check_version
+  image: 
+    name: alpine/git
+    entrypoint: [""]
+  script:
+    - APP_VERSION=$(grep 'version=' gradle.properties | cut -d'=' -f2 | tr -d '[:space:]')
+    - OLD_VERSION=$(git show HEAD~1:gradle.properties | grep 'version=' | cut -d'=' -f2 | tr -d '[:space:]' || echo "none")
+    - echo "New version = $APP_VERSION"
+    - echo "Old version = $OLD_VERSION"
+    - |
+      if [ "$APP_VERSION" == "$OLD_VERSION" ]; then
+        echo "SHOULD_BUILD=false" >> build.env
+      else
+        echo "SHOULD_BUILD=true" >> build.env
+      fi
+    - echo "APP_VERSION=$APP_VERSION" >> build.env
+  artifacts:
+    reports:
+      dotenv: build.env
+
+run_tests:
+  stage: test
+  needs: ["check_version"]
+  image: eclipse-temurin:21-jdk-alpine
+  script:
+
+    - |
+      if [ "$SHOULD_BUILD" == "false" ]; then
+        echo "Версия не менялась. Пропускаем стадию run_tests."
+        exit 0
+      fi
+
+
+    - echo "Проверка наличия тестов в папке:"
+    - find src/test/java -name "*.java" || echo "Тестов не найдено!"
+    - ./gradlew test --info --no-daemon
+  artifacts:
+    when: always
+    reports:
+      junit: build/test-results/test/**/TEST-*.xml
+    paths:
+      - build/reports/tests/test/
+    expire_in: 1 week
+
+
+build:
+  stage: build
+  needs: ["check_version","run_tests"] # Начнет сборку только после успешных тестов
+  image:
+    name: gcr.io/kaniko-project/executor:debug # Используем :debug, чтобы был доступен shell
+    entrypoint: [""]
+  script:
+    - |
+      if [ "$SHOULD_BUILD" == "false" ]; then
+        echo "Версия не менялась. Пропускаем стадию build."
+        exit 0
+      fi
+
+
+    # Создаем конфиг для авторизации в GitLab Registry
+    - echo "{\"auths\":{\"$CI_REGISTRY\":{\"auth\":\"$(printf "%s:%s" "$CI_REGISTRY_USER" "$CI_REGISTRY_PASSWORD" | base64 | tr -d '\n')\"}}}" > /kaniko/.docker/config.json
+    - ip link set dev eth0 mtu 1400 || true
+    - wget --spider --tries=3 --timeout=10 https://spring.io || echo "Сеть реально лежит"
+    # Запуск сборки
+    - /kaniko/executor --skip-tls-verify --context "${CI_PROJECT_DIR}" --dockerfile "${CI_PROJECT_DIR}/Dockerfile" --destination "${CI_REGISTRY_IMAGE}:${APP_VERSION}"  --cache=true --cache-repo="${CI_REGISTRY_IMAGE}/cache" --insecure --insecure-pull
+
+
+
+
+deploy_to_minikube:
+  stage: deploy
+  needs: ["check_version"]
+  image:
+    name: dtzar/helm-kubectl:latest
+    entrypoint: [""] # Это «отключает» вызов kubectl по умолчанию
+  script:
+# 1. Настройка подключения к Minikube внутри контейнера раннера
+# Используем адрес контейнера minikube или шлюз Docker-сети
+    - kubectl config set-cluster minikube --server=https://minikube:8443 --insecure-skip-tls-verify=true
+    - kubectl config set-credentials gitlab-admin --token=$KUBE_TOKEN
+    - kubectl config set-context minikube --cluster=minikube --user=gitlab-admin
+    - kubectl config use-context minikube
+
+# 2. Обновление деплоя
+    - kubectl create secret docker-registry gitlab-registry-key --docker-server=$CI_REGISTRY --docker-username=$CI_REGISTRY_USER_CUSTOM --docker-password=$REGISTRY_TOKEN --namespace=default --dry-run=client -o yaml | kubectl apply -f -
+
+    - kubectl delete deployment app --ignore-not-found
+    - helm upgrade --install app ./app --set image.repository=$CI_REGISTRY_IMAGE --set image.tag=$APP_VERSION --namespace default
+
+  

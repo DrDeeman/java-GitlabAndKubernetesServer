@@ -1,0 +1,33 @@
+У подов динамический ip внутри кластера, поэтому стабильное обращение к ним из сервисов негарантированно.
+Для обеспечения стабильности создается манифест с kind: Service.
+Он является стабильной точкой входа для кластера, которая следит за удалением\созданием новых под.
+
+***
+kubectl port-forward service/app-service <порт_хоста>:<порт_kind_service> - для тестовой проверки.
+  В простом варианте до поды недостучаться по другому. Балансировка не работает.
+Но можно заменить post_forward на NodePort (пример в service.yaml) - тогда проход становится постоянным.
+Балансировка при этом начинает работать.
+
+Сделать множество запросов для проверки можно с помощью след. небольшого скрипта
+
+ # while true; do curl -X POST http://<хост\port_прохода>/isTest      -H "Content-Type: application/json" -d '{"message" : "test message"}'; sleep 0.5; done
+получить хост/порт_сервиса можно с помощью
+  a) kubectl get services - получаем имя сервиса и смотрим что оно доступно
+  b) minikube service <name_service> --url
+
+
+********
+
+NodePort хоть и рабочий но негибкий вариант и требует жесткого проброса портов (причем и нестандартных)
+Лучшим решением будет настройка Ingress:
+  a) minikube addons enable ingress - активация стандартного Ingress-контроллера
+  b) kubectl get pods -n ingress-nginx - убедитесь, что контроллер запущен и находится в статусе Running 
+  c)minikube tunnel - если 80 порт ничем не занят
+                      также дополнительно надо изменить тип Ingress контроллера в minikube с NodePort 
+                      на LoadBalancer - 
+                      kubectl patch svc ingress-nginx-controller -n ingress-nginx -p '{"spec": {"type": "LoadBalancer"}}'
+                      после запуска tunnel проверяем - массив service не должен быть пустым
+                      kubectl get svc -n ingress-nginx - в списке должен быть LoadBalancer с назначенным ему EXTERNAL_IP
+                      
+     или 
+    kubectl port-forward -n ingress-nginx service/ingress-nginx-controller 8050:80 - ручной проброс порта, если 80 порт на хосте занят

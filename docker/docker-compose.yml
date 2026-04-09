@@ -1,0 +1,53 @@
+version: '3.9'
+
+services:
+  gitlab:
+    image: gitlab/gitlab-ce:latest
+    container_name: gitlab
+    hostname: gitlab
+    restart: always
+    networks:
+      - web
+    ports:
+      - "443:443"
+      - "8080:80"
+      - "22:22"
+      - "5005:5005"
+    deploy:
+      resources:
+        limits:
+          memory: 4g
+    volumes:
+      - gitlab_config:/etc/gitlab
+      - gitlab_logs:/var/log/gitlab
+      - gitlab_data:/var/opt/gitlab
+    networks: 
+      - web
+
+  
+  gitlab-runner:
+    image: gitlab/gitlab-runner:latest
+    container_name: gitlab-runner
+    restart: always
+    networks: 
+      - web
+    volumes:
+      - /srv/gitlab-runner/config:/etc/gitlab-runner
+      - /var/run/docker.sock:/var/run/docker.sock
+
+
+volumes:
+  gitlab_config:
+  gitlab_logs:
+  gitlab_data:
+
+
+networks:
+  web:
+    driver: bridge
+    name: web
+    ipam:
+      driver: default
+      config:
+        - subnet: 10.50.0.0/24
+          gateway: 10.50.0.1
