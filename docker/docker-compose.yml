@@ -7,7 +7,7 @@ services:
     hostname: gitlab
     restart: always
     networks:
-      - web
+      - minikube_net
     ports:
       - "443:443"
       - "8080:80"
@@ -21,8 +21,7 @@ services:
       - gitlab_config:/etc/gitlab
       - gitlab_logs:/var/log/gitlab
       - gitlab_data:/var/opt/gitlab
-    networks: 
-      - web
+
 
   
   gitlab-runner:
@@ -30,7 +29,7 @@ services:
     container_name: gitlab-runner
     restart: always
     networks: 
-      - web
+      - minikube_net
     volumes:
       - /srv/gitlab-runner/config:/etc/gitlab-runner
       - /var/run/docker.sock:/var/run/docker.sock
@@ -43,11 +42,6 @@ volumes:
 
 
 networks:
-  web:
-    driver: bridge
-    name: web
-    ipam:
-      driver: default
-      config:
-        - subnet: 10.50.0.0/24
-          gateway: 10.50.0.1
+  minikube_net:
+    external: true
+    name: minikube

@@ -1,11 +1,9 @@
-RUNNER_REGISTRATION_TOKEN_FOR_GITLAB = glrt-ip5ZBwCS_dw9dnsjMHYwKm86MQp0OjEKdToxCw.01.1201q3mhm
+RUNNER_REGISTRATION_TOKEN_FOR_GITLAB = glrt-4zhalLNl2EjojspVcLa7A286MQp0OjEKdToxCw.01.120v8rop8
 CLEAN_VOLUME ?= false
 
 
 install:
-	docker network create --subnet=10.50.0.0/24 web
-	minikube start --driver=docker --memory=2500 --cpus=2 --network=web --listen-address=0.0.0.0 --ports=8443:8443 --insecure-registry="gitlab:5005" && true
-	docker network connect web minikube
+	minikube start --driver=docker --memory=2500 --cpus=2 --static-ip=192.168.200.200 --listen-address=0.0.0.0 --ports=8443:8443 --insecure-registry="gitlab:5005" && true
 	docker-compose -f "$(PWD)/docker/docker-compose.yml" up --build -d && true
 
 
@@ -13,7 +11,7 @@ install:
 status:
 	docker ps -a
 	minikube status
-	docker network inspect web
+	docker network inspect minikube
 
 
 stop:
@@ -40,7 +38,7 @@ clean:
 	rm -rf ~/.minikube/profiles
 	rm -rf ~/.minikube/config
 	rm -rf ~/.minikube/certs
-	docker network rm web
+	docker network rm minikube
 
 
 checkedIntegrationRunnerWithMinikube:
@@ -67,5 +65,5 @@ chainedRunnerWithGitlab:
        --tag-list "docker,ubuntu" \
        --run-untagged="true" \
        --locked="false" \
-       --docker-network-mode web \
+       --docker-network-mode minikube \
        --access-level="not_protected"
