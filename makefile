@@ -1,9 +1,9 @@
-RUNNER_REGISTRATION_TOKEN_FOR_GITLAB = glrt-4zhalLNl2EjojspVcLa7A286MQp0OjEKdToxCw.01.120v8rop8
+RUNNER_REGISTRATION_TOKEN_FOR_GITLAB = glrt-H5uEV-vTpapO2xqPY0yFMG86MQp0OjEKdToxCw.01.121aoajwz
 CLEAN_VOLUME ?= false
 
 
 install:
-	minikube start --driver=docker --memory=2500 --cpus=2 --static-ip=192.168.200.200 --listen-address=0.0.0.0 --ports=8443:8443 --insecure-registry="gitlab:5005" && true
+	minikube start --driver=docker --memory=2500 --cpus=2 --static-ip=192.168.200.200 --listen-address=0.0.0.0 --ports=8443:8443 --insecure-registry="gitlab:5005" --embed-certs && true
 	docker-compose -f "$(PWD)/docker/docker-compose.yml" up --build -d && true
 
 
@@ -38,7 +38,6 @@ clean:
 	rm -rf ~/.minikube/profiles
 	rm -rf ~/.minikube/config
 	rm -rf ~/.minikube/certs
-	docker network rm minikube
 
 
 checkedIntegrationRunnerWithMinikube:

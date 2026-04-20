@@ -4,6 +4,8 @@ metadata:
   name: app
 spec:
   replicas: 2
+  strategy:
+    type: RollingUpdate
   selector:
     matchLabels:
       app: app #какие поды под какой меткой подконтрольны
@@ -17,5 +19,17 @@ spec:
       containers:
       - name: app-container
         image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        imagePullPolicy: Always
         ports:
         - containerPort: 8082 #это порт которое слушает приложение фактически
+        readinessProbe: #анализирует готовность приложения отвечать на запросы
+          httpGet:
+            path: /test_project/actuator/health/readiness # должен содержать server.servlet.context-path
+            port: 8082
+          initialDelaySeconds: 5 #первая проверка наступит через n секунд после старта контейнера
+          periodSeconds: 5 # делаем ретраи проверок каждые n секунд до первого успеха или failure раз (по умолчанию 3 раза, смотрим через kubectl describe pod)
+        livenessProbe: #проверка залипания приложения, если не отвечает то перезагружаем
+          httpGet:
+            path: /test_project/actuator/health/liveness # должен содержать server.servlet.context-path
+            port: 8082
+          initialDelaySeconds: 10 # по сути первая проверка после отработки readinessProbe время первого запуска тут readinessProbe.initialDelaySeconds + readinessProbe.periodSeconds

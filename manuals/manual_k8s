@@ -31,3 +31,12 @@ NodePort хоть и рабочий но негибкий вариант и тр
                       
      или 
     kubectl port-forward -n ingress-nginx service/ingress-nginx-controller 8050:80 - ручной проброс порта, если 80 порт на хосте занят
+
+
+
+
+
+******
+kubectl edit deployment <name_deployment> позволяет редактировать деплоймент с автоматическим переподнятием под
+По умолчанию используется редактор vi (vim) который иногда не очень удобен. Можно сменить его на более удобный редактор:
+  export KUBE_EDITOR="nano"
