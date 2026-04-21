@@ -7,7 +7,8 @@ services:
     hostname: gitlab
     restart: always
     networks:
-      - minikube_net
+      minikube_net:
+        ipv4_address: 192.168.200.2
     ports:
       - "443:443"
       - "8080:80"
@@ -29,16 +30,72 @@ services:
     container_name: gitlab-runner
     restart: always
     networks: 
-      - minikube_net
+      minikube_net:
+        ipv4_address: 192.168.200.3
     volumes:
       - /srv/gitlab-runner/config:/etc/gitlab-runner
       - /var/run/docker.sock:/var/run/docker.sock
+
+
+
+
+  db:
+    image: postgres:13.3
+    container_name: service_postgres
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgress
+      - POSTGRES_PASSWORD=postgress
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    volumes:
+     - ./backups/:/docker-entrypoint-initdb.d/
+     - pg_data:/var/lib/postgresql/data
+    ports:
+     - "5433:5432"
+    networks:
+     minikube_net:
+        ipv4_address: 192.168.200.4
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d products"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    tty: true
+
+
+
+  pgadmin:
+    user: root
+    container_name: service_pgadmin
+    image: dpage/pgadmin4
+    environment:
+      PGADMIN_DEFAULT_EMAIL: "stalkerdrdeeman@gmail.com"
+      PGADMIN_DEFAULT_PASSWORD: "passwd"
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+    volumes:
+      - pg_admin:/var/lib/pgadmin
+    ports:
+      - "8081:80"
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 1G
+    networks:
+      minikube_net:
+        ipv4_address: 192.168.200.5
+    depends_on:
+      db:
+        condition: service_healthy
 
 
 volumes:
   gitlab_config:
   gitlab_logs:
   gitlab_data:
+  pg_data:
+  pg_admin:
 
 
 networks:

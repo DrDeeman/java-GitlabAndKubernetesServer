@@ -3,10 +3,13 @@ package app.api.controller;
 import org.springframework.web.bind.annotation.RestController;
 
 import app.api.dto.Body;
+import app.dao.ProductsDAO;
+import app.db.entity.Products;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
-import org.springframework.http.ResponseEntity;
+import java.util.List;
+
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 
@@ -16,11 +19,13 @@ import org.springframework.web.bind.annotation.RequestBody;
 @Slf4j
 public class TestController {
     
+    private final ProductsDAO productsDAO;
+
     @PostMapping("isTest")
-    public ResponseEntity<Void> postMethodName(@RequestBody Body body) {
+    public List<Products> postMethodName(@RequestBody Body body) {
         log.info("message:{}", body);
         
-        return ResponseEntity.ok().build();
+        return productsDAO.getProducts();
     }
     
 }
