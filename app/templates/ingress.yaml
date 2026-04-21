@@ -2,19 +2,14 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: app-ingress
-  annotations:
-    # Отключает автоматический редирект для добавления слэша
-    nginx.ingress.kubernetes.io/configuration-snippet: |
-      rewrite ^([^.]*[^/])$ $1/ break;
 spec:
   rules:
-  - host: localhost
-    http:
-      paths:
-      - path: /test_project
-        pathType: Prefix
-        backend:
-          service:
-            name: app-service
-            port:
-              number: 8080
+    - http:
+        paths:
+        - path: /test_project
+          pathType: Prefix
+          backend:
+            service:
+              name: app-service
+              port:
+                number: 8080
