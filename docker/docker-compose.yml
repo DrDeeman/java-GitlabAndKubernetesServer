@@ -44,11 +44,11 @@ services:
     container_name: service_postgres
     environment:
       - POSTGRES_DB=postgres
-      - POSTGRES_USER=postgress
-      - POSTGRES_PASSWORD=postgress
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
       - PGDATA=/var/lib/postgresql/data/pgdata
     volumes:
-     - ./backups/:/docker-entrypoint-initdb.d/
+     - ./backups/products.sql:/docker-entrypoint-initdb.d/schema1.sql
      - pg_data:/var/lib/postgresql/data
     ports:
      - "5433:5432"
@@ -90,12 +90,56 @@ services:
         condition: service_healthy
 
 
+  secman-server:
+    image: hashicorp/vault:1.15
+    container_name: vault-server
+    # ЯВНО указываем запуск сервера, чтобы убить Dev-mode
+    command: server 
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      minikube_net:
+        ipv4_address: 192.168.200.6
+    environment:
+      # ВАЖНО: Используем путь /vault/file, так как он "родной" для образа
+      VAULT_LOCAL_CONFIG: |
+        {
+          "disable_mlock": true,
+          "storage": {
+            "raft": {
+              "path": "/vault/file",
+              "node_id": "node1"
+            }
+          },
+          "listener": {
+            "tcp": {
+              "address": "0.0.0.0:8200",
+              "cluster_address": "0.0.0.0:8201",
+              "tls_disable": 1
+            }
+          },
+          "cluster_addr": "http://192.168.200.6:8201",
+          "api_addr": "http://192.168.200.6:8200",
+          "ui": true
+        }
+      VAULT_ADDR: "http://127.0.0.1:8200"
+    volumes:
+      # Монтируем в /vault/file — этот путь в образе уже имеет нужные права
+      - vault_data:/vault/file
+    ports:
+      - "8088:8200"
+      - "8201:8201"
+    cap_add:
+      - IPC_LOCK
+
 volumes:
   gitlab_config:
   gitlab_logs:
   gitlab_data:
   pg_data:
   pg_admin:
+  vault_data:
 
 
 networks:

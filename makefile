@@ -5,6 +5,7 @@ CLEAN_VOLUME ?= false
 install:
 	minikube start --driver=docker --memory=2500 --cpus=2 --static-ip=192.168.200.200 --listen-address=0.0.0.0 --ports=8443:8443 --insecure-registry="gitlab:5005" --embed-certs && true
 	docker-compose -f "$(PWD)/docker/docker-compose.yml" up --build -d && true
+	minikube addons enable ingress && true
 
 
 
