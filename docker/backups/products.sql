@@ -17,13 +17,13 @@ SET client_min_messages = warning;
 SET row_security = off;
 
 --
--- Name: products; Type: DATABASE; Schema: -; Owner: postgres
+-- Name: products; Type: DATABASE; Schema: -; Owner: postgress
 --
 
 CREATE DATABASE products WITH TEMPLATE = template0 ENCODING = 'UTF8' ;
 
 
-ALTER DATABASE products OWNER TO postgres;
+ALTER DATABASE products OWNER TO postgress;
 
 \connect products
 
@@ -43,7 +43,7 @@ SET default_tablespace = '';
 SET default_table_access_method = heap;
 
 --
--- Name: products; Type: TABLE; Schema: public; Owner: postgres
+-- Name: products; Type: TABLE; Schema: public; Owner: postgress
 --
 
 CREATE TABLE public.products (
@@ -55,10 +55,10 @@ CREATE TABLE public.products (
 );
 
 
-ALTER TABLE public.products OWNER TO postgres;
+ALTER TABLE public.products OWNER TO postgress;
 
 --
--- Name: products_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: products_id_seq; Type: SEQUENCE; Schema: public; Owner: postgress
 --
 
 CREATE SEQUENCE public.products_id_seq
@@ -69,10 +69,10 @@ CREATE SEQUENCE public.products_id_seq
     CACHE 1;
 
 
-ALTER TABLE public.products_id_seq OWNER TO postgres;
+ALTER TABLE public.products_id_seq OWNER TO postgress;
 
 --
--- Name: products_id_seq1; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: products_id_seq1; Type: SEQUENCE; Schema: public; Owner: postgress
 --
 
 CREATE SEQUENCE public.products_id_seq1
@@ -84,24 +84,24 @@ CREATE SEQUENCE public.products_id_seq1
     CACHE 1;
 
 
-ALTER TABLE public.products_id_seq1 OWNER TO postgres;
+ALTER TABLE public.products_id_seq1 OWNER TO postgress;
 
 --
--- Name: products_id_seq1; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- Name: products_id_seq1; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgress
 --
 
 ALTER SEQUENCE public.products_id_seq1 OWNED BY public.products.id;
 
 
 --
--- Name: products id; Type: DEFAULT; Schema: public; Owner: postgres
+-- Name: products id; Type: DEFAULT; Schema: public; Owner: postgress
 --
 
 ALTER TABLE ONLY public.products ALTER COLUMN id SET DEFAULT nextval('public.products_id_seq1'::regclass);
 
 
 --
--- Data for Name: products; Type: TABLE DATA; Schema: public; Owner: postgres
+-- Data for Name: products; Type: TABLE DATA; Schema: public; Owner: postgress
 --
 
 INSERT INTO public.products VALUES (1, 'Batman #9', 350, 5, '2021-01-01 00:00:00');
@@ -116,21 +116,21 @@ INSERT INTO public.products VALUES (9, 'Batman #5', 350, 5, '2021-01-01 00:00:00
 
 
 --
--- Name: products_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+-- Name: products_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgress
 --
 
 SELECT pg_catalog.setval('public.products_id_seq', 1, false);
 
 
 --
--- Name: products_id_seq1; Type: SEQUENCE SET; Schema: public; Owner: postgres
+-- Name: products_id_seq1; Type: SEQUENCE SET; Schema: public; Owner: postgress
 --
 
 SELECT pg_catalog.setval('public.products_id_seq1', 9, true);
 
 
 --
--- Name: products products_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: products products_pkey; Type: CONSTRAINT; Schema: public; Owner: postgress
 --
 
 ALTER TABLE ONLY public.products
