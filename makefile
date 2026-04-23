@@ -1,12 +1,55 @@
 RUNNER_REGISTRATION_TOKEN_FOR_GITLAB = glrt-H5uEV-vTpapO2xqPY0yFMG86MQp0OjEKdToxCw.01.121aoajwz
 CLEAN_VOLUME ?= false
+PATH_FOR_CERT_MINIKUBE="$$HOME/minikube_ca.crt"
+PATH_FOR_RUNNER_TOKEN="$$HOME/runner_token.txt"
+PATH_FOR_VAULT_TOKEN="$$HOME/vault_token.txt"
 
 
 install:
+	@echo "Удаляем старые серты с хоста..."
+	rm -f "$(PATH_FOR_CERT_MINIKUBE)"
+	rm -f "$(PATH_FOR_RUNNER_TOKEN)"
+	rm -f "$(PATH_FOR_VAULT_TOKEN)"
+
+
+	@echo "Поднимаем инфраструктуру..."
 	minikube start --driver=docker --memory=2500 --cpus=2 --static-ip=192.168.200.200 --listen-address=0.0.0.0 --ports=8443:8443 --insecure-registry="gitlab:5005" --embed-certs && true
 	docker-compose -f "$(PWD)/docker/docker-compose.yml" up --build -d && true
-	minikube addons enable ingress && true
 
+
+	@echo "Пробрасываем сертификат Minikube в Vault..."
+	kubectl get secret $(kubectl get sa default -o jsonpath='{.secrets[0].name}') -o jsonpath='{.data.ca\.crt}' | base64 --decode > "$(PATH_FOR_CERT_MINIKUBE)" && true
+	
+	@if [ -f "$(PATH_FOR_CERT_MINIKUBE)" ]; then \
+		echo "$(PATH_FOR_CERT_MINIKUBE) существует. Копируем..."; \
+		docker cp "$(PATH_FOR_CERT_MINIKUBE)" vault-server:/vault/minikube_ca.crt; \
+	else \
+		echo "$(PATH_FOR_CERT_MINIKUBE) не найден. Прерываю..."; \
+		exit 1; \
+	fi
+
+
+	@echo "Создаем токены доступа в Minikube для Gitlab-Runner/Vault..."
+	$(MAKE) createAuthTokenRunnerForMinikube
+	$(MAKE) createAuthTokenVaultForMinikube
+
+	@if [ -f "$(PATH_FOR_RUNNER_TOKEN)" ]; then \
+		echo "$(PATH_FOR_RUNNER_TOKEN) существует. Копируем..."; \
+	else \
+		echo "$(PATH_FOR_RUNNER_TOKEN) не найден. Прерываю..."; \
+		exit 1; \
+	fi
+
+	@if [ -f "$(PATH_FOR_VAULT_TOKEN)" ]; then \
+		echo "$(PATH_FOR_VAULT_TOKEN) существует. Копируем..."; \
+	else \
+		echo "$(PATH_FOR_VAULT_TOKEN) не найден. Прерываю..."; \
+		exit 1; \
+	fi
+
+
+	@echo "Включаем необходимые плагины в Minikube..."
+	minikube addons enable ingress && true
 
 
 status:
@@ -50,7 +93,12 @@ checkedIntegrationRunnerWithMinikube:
 createAuthTokenRunnerForMinikube:
 	kubectl create serviceaccount gitlab-admin || true
 	kubectl create clusterrolebinding gitlab-admin-binding --clusterrole=cluster-admin --serviceaccount=default:gitlab-admin || true
-	kubectl create token gitlab-admin --duration=8760h
+	kubectl create token gitlab-admin --duration=8760h > "$(PATH_FOR_RUNNER_TOKEN)"
+
+createAuthTokenVaultForMinikube:
+	kubectl create serviceaccount vault-auth
+	kubectl create clusterrolebinding vault-auth-binding --clusterrole=system:auth-delegator --serviceaccount=default:vault-auth
+	kubectl create token vault-auth --duration=8760h > "$(PATH_FOR_VAULT_TOKEN)"
 
 
 chainedRunnerWithGitlab:
