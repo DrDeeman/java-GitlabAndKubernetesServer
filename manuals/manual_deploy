@@ -14,7 +14,7 @@
 
 
     c) После поднятия контейнера лезем в него - docker exec -it gitlab /bin/bash
-      внутри смотрим пароль в /etc/gitlab/initial_root_password
+      внутри смотрим пароль в /etc/gitlab/initial_root_password (живет 24 часа после создания файла, после файл удаляется и нужно сбрасывать)
 
     d) Логинимся в браузере с логином root и полученным паролем и создаем раннер по пути Admin -> CI/CD -> Runners -> Create instance runners
        Проставляем также Run untagged jobs и создаем
