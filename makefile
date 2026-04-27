@@ -7,31 +7,22 @@ PATH_FOR_RUNNER_TOKEN="$$HOME/runner_token.txt"
 PATH_FOR_VAULT_TOKEN="$$HOME/vault_token.txt"
 
 ROOT_VAULT_TOKEN?=root
+ROOT_RUNNER_TOKEN?=root
 
 #ID проекта (где репозитории лежат) в Gitlab - смотрим по пути Settings -> General
 PROJECT_ID=2
 
 
 install:
-	@echo "Удаляем старые серты с хоста..."
-	rm -f "$(PATH_FOR_CERT_MINIKUBE)"
 
 	@echo "Поднимаем инфраструктуру..."
 	minikube start --driver=docker --memory=2500 --cpus=2 --static-ip=192.168.200.200 --listen-address=0.0.0.0 --ports=8443:8443 --insecure-registry="gitlab:5005" --embed-certs && true
 	docker-compose -f "$(PWD)/docker/docker-compose.yml" up --build -d && true
 
 
-	@echo "Пробрасываем сертификат Minikube в Vault..."
-	kubectl get secret $(kubectl get sa default -o jsonpath='{.secrets[0].name}') -o jsonpath='{.data.ca\.crt}' | base64 --decode > "$(PATH_FOR_CERT_MINIKUBE)" && true
-	
-	@if [ -f "$(PATH_FOR_CERT_MINIKUBE)" ]; then \
-		echo "$(PATH_FOR_CERT_MINIKUBE) существует. Копируем..."; \
-		docker cp "$(PATH_FOR_CERT_MINIKUBE)" vault-server:/vault/minikube_ca.crt; \
-	else \
-		echo "$(PATH_FOR_CERT_MINIKUBE) не найден. Прерываю..."; \
-		exit 1; \
-	fi
-
+    #api становится доступным не сразу после поднятия контеценров, надо подождать
+	@echo "Ожидание запуска Vault (60 сек)..."
+	sleep 60
 	$(MAKE) createTokensAuto
 
 	@echo "Включаем необходимые плагины в Minikube..."
@@ -72,14 +63,27 @@ clean:
 
 
 createTokensAuto:
-
+	@echo "Удаляем старые серты с хоста..."
+	rm -f "$(PATH_FOR_CERT_MINIKUBE)"
 	rm -f "$(PATH_FOR_RUNNER_TOKEN)"
 	rm -f "$(PATH_FOR_VAULT_TOKEN)"
+
+	@echo "Пробрасываем сертификат Minikube в Vault..."
+	cat ~/.minikube/ca.crt > "$(PATH_FOR_CERT_MINIKUBE)" && true
+	
+	@if [ -f "$(PATH_FOR_CERT_MINIKUBE)" ]; then \
+		echo "$(PATH_FOR_CERT_MINIKUBE) существует. Копируем..."; \
+		docker cp "$(PATH_FOR_CERT_MINIKUBE)" vault-server:/vault/minikube_ca.crt; \
+	else \
+		echo "$(PATH_FOR_CERT_MINIKUBE) не найден. Прерываю..."; \
+		exit 1; \
+	fi
 
 	@echo "Создаем токены доступа в Minikube для Gitlab-Runner/Vault..."
 	$(MAKE) createAuthTokenRunnerForMinikube
 	$(MAKE) createAuthTokenVaultForMinikube
 
+	@echo "Создаем\обновляем переменную KUBE_TOKEN в Gitlab ..."
 	@if [ -f "$(PATH_FOR_RUNNER_TOKEN)" ]; then \
 		echo "$(PATH_FOR_RUNNER_TOKEN) существует. Копируем..."; \
 		RUNNER_TOKEN_VALUE=$$(cat $(PATH_FOR_RUNNER_TOKEN) | tr -d '\n\r'); \
@@ -92,7 +96,7 @@ createTokensAuto:
 		echo "Статус вызова: (код $$STATUS)."; \
 		if [ "$$STATUS" != "200" ]; then \
 			echo "Переменная не найдена. Создаем через POST..."; \
-			STATUS=$$(curl --request POST -s -o /dev/null \
+			STATUS=$$(curl --request POST -s -o /dev/null -w "%{http_code}" \
 				--header "PRIVATE-TOKEN: $(GITLAB_PAT)" \
 				--header "Content-Type: application/json" \
 				--data "{\"key\": \"KUBE_TOKEN\", \"value\": \"$$RUNNER_TOKEN_VALUE\", \"masked\": false}" \
@@ -107,16 +111,38 @@ createTokensAuto:
 	fi
 
 
+	@echo "Создаем\обновляем переменную REGISTRY_TOKEN в Gitlab ..."
+	echo "Пытаемся обновить REGISTRY_TOKEN..."; \
+		STATUS=$$(curl --request PUT -s -o /dev/null -w "%{http_code}" \
+			--header "PRIVATE-TOKEN: $(GITLAB_PAT)" \
+			--header "Content-Type: application/json" \
+			--data "{\"value\": \"$$GITLAB_PAT\", \"masked\": false}" \
+			"http://localhost:8080/api/v4/projects/$(PROJECT_ID)/variables/REGISTRY_TOKEN"); \
+		echo "Статус вызова: (код $$STATUS)."; \
+		if [ "$$STATUS" != "200" ]; then \
+			echo "Переменная не найдена. Создаем через POST..."; \
+			STATUS=$$(curl --request POST -s -o /dev/null -w "%{http_code}" \
+				--header "PRIVATE-TOKEN: $(GITLAB_PAT)" \
+				--header "Content-Type: application/json" \
+				--data "{\"key\": \"REGISTRY_TOKEN\", \"value\": \"$$GITLAB_PAT\", \"masked\": false}" \
+				"http://localhost:8080/api/v4/projects/$(PROJECT_ID)/variables"); \
+			echo "Статус вызова: (код $$STATUS)."; \
+	    else \
+			echo "Обновлено успешно."; \
+		fi; 
+
+
+
+	@echo "Регистрируем токен для Vault созданный в K8s в Vault ..."
 	@if [ -f "$(PATH_FOR_VAULT_TOKEN)" ]; then \
 		echo "$(PATH_FOR_VAULT_TOKEN) существует. Копируем..."; \
 		VAULT_TOKEN_VALUE=$$(cat $(PATH_FOR_VAULT_TOKEN) | tr -d '\n\r'); \
-		docker exec -e VAULT_TOKEN=$${ROOT_VAULT_TOKEN} vault-server sh -c " \
+		docker exec -e VAULT_TOKEN=$(ROOT_VAULT_TOKEN) vault-server sh -c " \
 			vault write auth/kubernetes/config \
 				token_reviewer_jwt="$$VAULT_TOKEN_VALUE" \
     			kubernetes_host="https://minikube:8443" \
-    			kubernetes_ca_cert=@/vault/minikube_ca.crt \
-    			disable_local_ca_jwt=true \
-		" \
+    			kubernetes_ca_cert='@/vault/minikube_ca.crt' \
+    			disable_local_ca_jwt=true" && echo "Vault сконфигурирован успешно."; \
 	else \
 		echo "$(PATH_FOR_VAULT_TOKEN) не найден. Прерываю..."; \
 		exit 1; \
@@ -144,7 +170,7 @@ chainedRunnerWithGitlab:
 	docker exec -it gitlab-runner gitlab-runner register \
        --non-interactive \
        --url "http://gitlab" \
-       --registration-token "$(GITLAB_PAT)" \
+       --registration-token "$(ROOT_RUNNER_TOKEN)" \
        --executor "docker" \
        --docker-image "alpine:latest" \
        --description "my-runner-ubuntu-2404" \

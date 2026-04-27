@@ -22,6 +22,24 @@ Secman - централизованное хранилище для различ
    a)secret/my-app - secret тут папка, созданная ранее, my-app - имя самого секрета
    b)password/api_key - это свойства объекта под которыми будут хранится данные, можно изменить на другое желаемое значение
 
+
+Также нужно создать политику доступа к секрету (или папке) с правами на чтение:
+   a) docker exec -i vault-server vault policy write "app-policy" - <<EOF
+      path "minikube_secret/*" {
+      capabilities = ["read"]
+    }
+   EOF
+   b) docker exec vault-server vault policy list - проверяет что созданная политика есть в списке
+
+
+И затем создаем роль, в которой связываем ранее созданный ServiceAccount (в makefile это часть команды createAuthTokenVaultForMinikube),
+ к которой привязываем политику:
+   a) docker exec -i vault-server vault write auth/kubernetes/role/app-role \
+        bound_service_account_names="vault-auth" \
+        bound_service_account_namespaces="default" \
+        policies="app-policy" \
+        ttl="999h"
+
 При входе в Vault через UI (порт 8088 в проекте) потребуется ввести 3 ключа и токен. 
 
 

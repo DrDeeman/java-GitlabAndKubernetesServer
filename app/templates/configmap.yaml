@@ -7,5 +7,3 @@ data:
   # Можно хранить отдельные ключи
   DB_PORT: "5432"
   DB_HOST: "db"
-  DATABASE_USERNAME: postgress
-  DATABASE_PASSWORD: postgress

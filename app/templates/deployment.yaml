@@ -13,13 +13,63 @@ spec:
     metadata:
       labels:
         app: app #метка для под
+      annotations:
+        vault.hashicorp.com/agent-inject: "true" # 1. Включаем инжектор Vault
+        vault.hashicorp.com/role: "app-role" # 2. Указываем созданную ранее роль
+        vault.hashicorp.com/agent-inject-secret-db-config: "minikube_secret/app-service" # 3. Указываем путь к секрету в Vault
+        vault.hashicorp.com/agent-inject-template-db-config: | # 4. ШАБЛОН: Как превратить данные из Vault в файл
+          {{ `{{- with secret "minikube_secret/app-service" - }}` }}
+          DATABASE_USERNAME="{{ `{{ .Data.data.username }}` }}"
+          DATABASE_PASSWORD="{{ `{{ .Data.data.password }}` }}"
+          {{ `{{ - end - }}` }}
     spec:
       imagePullSecrets:
         - name: gitlab-registry-key
+      initContainers:
+        - name: vault-fetcher
+          image: alpine:latest
+          command: ["/bin/sh", "-c"]
+          args: #можно в конец еще добавить sleep 3600 для анализа содержимого init-sidecar контейнера
+            - |
+              apk add --no-cache curl jq
+              echo "--- Checking connection to Vault ---"
+    
+              RESPONSE=$(curl -s -H "X-Vault-Token: $VAULT_TOKEN" $VAULT_ADDR/v1/minikube_secret/data/app-service)
+    
+              echo "Raw response from Vault: $RESPONSE"
+    
+              if [ -z "$RESPONSE" ] || [ "$RESPONSE" == "null" ]; then
+                  echo "ERROR: Vault returned empty response"
+                 exit 1
+              fi
+
+              if echo "$RESPONSE" | jq -e '.errors' > /dev/null; then
+                  echo "ERROR: Vault returned API error:"
+                  echo "$RESPONSE" | jq '.errors'
+                  exit 1
+              fi
+
+              echo "spring:
+                datasource:
+                  username: $(echo $RESPONSE | jq -r .data.data.username)
+                  password: $(echo $RESPONSE | jq -r .data.data.password)" > /vault/secrets/application-vault.yaml
+
+              echo "SUCCESS: Secrets written to /vault/secrets/application-vault.yaml"
+          env:
+            - name: VAULT_ADDR
+              value: "http://vault-server:8200"
+            - name: VAULT_TOKEN
+              value: "root"
+          volumeMounts:
+            - name: secret-storage
+              mountPath: /vault/secrets
       containers:
       - name: app-container
         image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
         imagePullPolicy: Always
+        env:
+          - name: SPRING_CONFIG_ADDITIONAL_LOCATION
+            value: "file:/vault/secrets/application-vault.yaml"
         envFrom:
           - configMapRef:
               name: app-config
@@ -36,3 +86,9 @@ spec:
             path: /test_project/actuator/health/liveness # должен содержать server.servlet.context-path
             port: 8082
           initialDelaySeconds: 20 # по сути первая проверка после отработки readinessProbe время первого запуска тут readinessProbe.initialDelaySeconds + readinessProbe.periodSeconds
+        volumeMounts:
+          - name: secret-storage
+            mountPath: /vault/secrets
+      volumes:
+        - name: secret-storage
+          emptyDir: {}

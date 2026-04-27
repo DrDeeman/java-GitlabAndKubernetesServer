@@ -95,9 +95,6 @@ services:
     container_name: vault-server
     # ЯВНО указываем запуск сервера, чтобы убить Dev-mode
     command: server 
-    depends_on:
-      db:
-        condition: service_healthy
     networks:
       minikube_net:
         ipv4_address: 192.168.200.6

@@ -19,8 +19,8 @@ spring:
   application:
     name: demo
 
-  profiles:
-    active: local
+  #profiles:
+  #  active: local
 
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/products
