@@ -1,4 +1,4 @@
-#PAT - Personal Access Token для доступа к Api Gitlab (должен иметь права read_repository/api)
+#PAT - Personal Access Token для доступа к Api Gitlab (должен иметь права read_repository/read_registry/api)
 GITLAB_PAT?=root
 
 CLEAN_VOLUME ?= false
@@ -6,7 +6,7 @@ PATH_FOR_CERT_MINIKUBE="$$HOME/minikube_ca.crt"
 PATH_FOR_RUNNER_TOKEN="$$HOME/runner_token.txt"
 PATH_FOR_VAULT_TOKEN="$$HOME/vault_token.txt"
 
-ROOT_VAULT_TOKEN?=root
+ROOT_VAULT_TOKEN?=root #здесь используется Initial Root Token выданный при инициализации сервера
 ROOT_RUNNER_TOKEN?=root
 
 #ID проекта (где репозитории лежат) в Gitlab - смотрим по пути Settings -> General
@@ -83,6 +83,11 @@ createTokensAuto:
 	$(MAKE) createAuthTokenRunnerForMinikube
 	$(MAKE) createAuthTokenVaultForMinikube
 
+	$(MAKE) updateTokens
+
+	
+
+updateTokens:
 	@echo "Создаем\обновляем переменную KUBE_TOKEN в Gitlab ..."
 	@if [ -f "$(PATH_FOR_RUNNER_TOKEN)" ]; then \
 		echo "$(PATH_FOR_RUNNER_TOKEN) существует. Копируем..."; \
@@ -112,27 +117,31 @@ createTokensAuto:
 
 
 	@echo "Создаем\обновляем переменную REGISTRY_TOKEN в Gitlab ..."
-	echo "Пытаемся обновить REGISTRY_TOKEN..."; \
-		STATUS=$$(curl --request PUT -s -o /dev/null -w "%{http_code}" \
+	@echo "Пытаемся обновить REGISTRY_TOKEN..."; \
+	STATUS=$$(curl --request PUT -s -o /dev/null -w "%{http_code}" \
+		--header "PRIVATE-TOKEN: $(GITLAB_PAT)" \
+		--header "Content-Type: application/json" \
+		--data '{"value": "$(GITLAB_PAT)", "masked": false}' \
+		"http://localhost:8080/api/v4/projects/$(PROJECT_ID)/variables/REGISTRY_TOKEN"); \
+	echo "Статус вызова: (код $$STATUS)."; \
+	if [ "$$STATUS" != "200" ]; then \
+		echo "Переменная не найдена. Создаем через POST..."; \
+		STATUS=$$(curl --request POST -s -o /dev/null -w "%{http_code}" \
 			--header "PRIVATE-TOKEN: $(GITLAB_PAT)" \
 			--header "Content-Type: application/json" \
-			--data "{\"value\": \"$$GITLAB_PAT\", \"masked\": false}" \
-			"http://localhost:8080/api/v4/projects/$(PROJECT_ID)/variables/REGISTRY_TOKEN"); \
+			--data '{"key": "REGISTRY_TOKEN", "value": "$(GITLAB_PAT)", "masked": false}' \
+			"http://localhost:8080/api/v4/projects/$(PROJECT_ID)/variables"); \
 		echo "Статус вызова: (код $$STATUS)."; \
-		if [ "$$STATUS" != "200" ]; then \
-			echo "Переменная не найдена. Создаем через POST..."; \
-			STATUS=$$(curl --request POST -s -o /dev/null -w "%{http_code}" \
-				--header "PRIVATE-TOKEN: $(GITLAB_PAT)" \
-				--header "Content-Type: application/json" \
-				--data "{\"key\": \"REGISTRY_TOKEN\", \"value\": \"$$GITLAB_PAT\", \"masked\": false}" \
-				"http://localhost:8080/api/v4/projects/$(PROJECT_ID)/variables"); \
-			echo "Статус вызова: (код $$STATUS)."; \
-	    else \
-			echo "Обновлено успешно."; \
-		fi; 
+	else \
+		echo "Обновлено успешно."; \
+	fi
 
 
 
+	
+
+
+registrationK8STokenForVault: #эта задача выполняется после make install и распечатывания Vault
 	@echo "Регистрируем токен для Vault созданный в K8s в Vault ..."
 	@if [ -f "$(PATH_FOR_VAULT_TOKEN)" ]; then \
 		echo "$(PATH_FOR_VAULT_TOKEN) существует. Копируем..."; \
@@ -179,5 +188,6 @@ chainedRunnerWithGitlab:
        --locked="false" \
        --docker-network-mode minikube \
        --access-level="not_protected"
+	docker restart gitlab-runner
 
 

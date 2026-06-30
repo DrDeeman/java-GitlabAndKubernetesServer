@@ -40,6 +40,12 @@ Secman - централизованное хранилище для различ
         policies="app-policy" \
         ttl="999h"
 
+
+Для текущего состояния проекта для поднятия под нужно создать VAULT_TOKEN, чтобы k8s подтянул секреты из Vault. 
+ a) kubectl create token vault-auth --namespace=default --duration=24h - получили jwt-токен для авторизации в Vault по апи.
+ b) curl --request POST \
+  --data "{\"jwt\": \"${JWT_TOKEN}\", \"role\": \"app-role\"}" - по токену запрашиваем Vault_token и прописываем его в скрипт развертки
+
 При входе в Vault через UI (порт 8088 в проекте) потребуется ввести 3 ключа и токен. 
 
 
